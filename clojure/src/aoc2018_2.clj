@@ -26,8 +26,14 @@
 
 (defn n-repeats?
   "str에 n번 반복되는 문자가 존재하는지 여부 (있으면 n, 없으면 nil 리턴)"
-  [str n]
+  [n str]
   (some #{n} (vals (frequencies str))))
+;; (defn- private [] ()) == (defn ^:private [] ()) / convention 
+;; 상 defn- 을 많이 씀
+
+;; 커링 currying (haskell A -> A -> A ) == (n (str))
+(def two-repeats? (partial n-repeats? 2))
+(def three-repeats? (partial n-repeats? 3))
 
 (defn map-to-repeats
   "주어진 문자열들을 2, 3번 반복되는 문자가 있는지 여부를 나타내는 [2-or-nil, 3-or-nil] 형태로 변환
@@ -35,28 +41,40 @@
    - 3번 반복되는 문자만 있음 -> [nil, 3]
    - 2번 반복되는 문자, 3번 반복되는 문자 다 있음 -> [2, 3]"
   [str-list]
-  (map #(vector (n-repeats? % 2) (n-repeats? % 3)) str-list))
+  ;; (map #(vector (n-repeats? 2 %) (n-repeats? 3 %)) str-list))
+  (map #(hash-map :two (two-repeats? %) :three (three-repeats? %)) str-list))
+;;
+;; f g, str => [f(str) g(str)] => juxt
+;; https://clojuredocs.org/clojure.core/juxt
+;; 
+;; f str1 str2 str3 => (map f strs)
 
 (defn reduce-repeats
   "각 문자열들에 map-to-repeats 호출해서 얻어진 [2-or-nil, 3-or-nil] 결과들을 취합하여
    전체 중 2반복 문자 수, 3반복 경우 수를 [int, int] 형태로 리턴"
   [repeats-list]
   (reduce
-   (fn [prev repeats]
-     (vector
-      (+ (prev 0) (if (repeats 0) 1 0))
-      (+ (prev 1) (if (repeats 1) 1 0))))
-   [0 0]
+   (fn [{two-sum :two, three-sum :three}
+        {two-repeat :two, three-repeat :three}] ;; destructuring https://clojure.org/guides/destructuring
+     (hash-map
+      :two (+ two-sum (if two-repeat 1 0))
+      :three (+ three-sum (if three-repeat 1 0))))
+   {:two 0 :three 0}
    repeats-list))
+;; vec 대신 map 을 사용하면 가독성에 도움이 됨 -> 프로덕션 코드에서는 거의 map을 씀. 왜냐면 보는 사람들이 알아야하니까.
+;; 
+;; (def data {:two-count 0
+;;            :three-count 0})
+;; (inc (:two-count data))
 
 (defn print-result
   "결과 출력"
   [repeats-sum]
-  (println
+  (prn
    (format "동일 문자가 2번, 3번 나오는 경우의 총 합은 각각 %d, %d이고 이 두 수의 곱은 %d 입니다."
-           (repeats-sum 0)
-           (repeats-sum 1)
-           (* (repeats-sum 0) (repeats-sum 1)))))
+           (:two repeats-sum)
+           (:three repeats-sum)
+           (* (:two repeats-sum) (:three repeats-sum)))))
 
 (->> part1-sample-file
      read-file
@@ -113,6 +131,33 @@
       (if (or found (== 1 (count rest-col)))
         found
         (recur rest-col)))))
+
+;; 2중 루프 돌리기 -> 중첩된 map
+;; ["a" "b" "c"]
+
+(def strs ["a" "b" "c"])
+(for [x strs
+      y strs
+      :when (not= x y)]
+  [x y])
+;; https://clojuredocs.org/clojure.core/for
+;; list comprehension
+;; map 도 적용 가능
+;; ["a" "b"] ["a" "c"]
+
+;;(defn find-same-parts [v data]
+;; )
+
+;; (->> data)
+;;   (map #(find-same-parts % data)
+;;   (filter #())
+;;   first)
+
+;; lazy seq
+(->> [1 2 3 4, ...]
+     (map inc)
+     (filter odd?)
+     (take 2)) ;; 3 5
 
 (-> part2-sample-file
     read-file

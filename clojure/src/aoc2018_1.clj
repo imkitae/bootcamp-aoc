@@ -37,7 +37,7 @@
 (defn add-all
   "inputs의 요소들을 int파싱해서 합산하는 reduce 적용"
   [inputs]
-  (reduce + 0 inputs))
+  (reduce + inputs))
 
 (parse2 part1-sample-file add-all)
 
@@ -114,18 +114,35 @@
   "boolean 제거"
   [col el] (some #{el} col))
 
-(defn get-duplicated-sum
+(defn get-duplicated-sum ; reduce로 바꾸기!
   "- print문 제거
    - index를 사용하지 않는 방법으로 변경"
   [nums]
-  (loop [items nums
+  (loop [items (cycle nums)
          old-sums #{}
-         sum 0] 
+         sum 0]
     (if (in? old-sums sum)
       sum
-      (recur (rest (cycle items))
+      (recur (rest items)
              (conj old-sums sum)
              (+ sum (first items))))))
+
+(defn get-duplicated-sum2
+  "- reduce, reduced, reductions 사용"
+  [nums]
+  (reduce
+   (fn [sum-set sum]
+     (if (in? sum-set sum)
+       (reduced sum)
+       (conj sum-set sum)))
+   #{} (reductions + (cycle nums))))
+
+;; 가능하면 이렇게 바꿔보기
+;; 왜냐면 우측으로 갈수록 추상화가 더 높은 단계임 
+;; loop/recur -> reduce -> map/filter
+;;
+;; 1, 2, 3 => 6
+;; 1, 2, 3 => 2, 4, 6
 
 (defn print-duplicated-sum
   "중복 발생 누적 합 결과 출력"
@@ -135,7 +152,7 @@
 (-> part2-sample-file
     read-file
     convert-to-int
-    get-duplicated-sum
+    get-duplicated-sum2
     print-duplicated-sum)
 
 ;; #################################
