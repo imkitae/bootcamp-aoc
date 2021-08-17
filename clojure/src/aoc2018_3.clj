@@ -117,13 +117,16 @@
      :id (:id rect1),
      :intersection? (for [rect2 rects] (intersect? rect1 rect2)))))
 
-(defn not-intersect? [intersection-map]
-  (not-any? identity (:intersection? intersection-map)))
+(defn not-intersect-map? [intersection-map]
+  (every? false? (:intersection? intersection-map)))
+
+(defn intersect-map? [intersection-map]
+  (some? true? (:intersection? intersection-map)))
 
 (defn print-part2-result [intersection-maps]
   (format
    "겹치는 않는 영역을 가진 ID는 %d 입니다."
-   (:id (first (filter not-intersect? intersection-maps)))))
+   (:id (first (filter not-intersect-map? intersection-maps)))))
 
 (->> sample-file
      read-file
