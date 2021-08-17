@@ -38,24 +38,30 @@
 (defn parse-guard-id [str]
   (Integer/parseInt (subs str 1)))
 
-(defn parse-event [date time [head & rest]]
+(defn parse-event
+  "head 토큰 내용에 따라 :type을 :shift, :falls, :wakes로 대입한다."
+  [date time [head & rest]]
   (case head
     "Guard" {:date date :time time :type :shift :guard (parse-guard-id (first rest))}
     "falls" {:date date :time time :type :falls}
     "wakes" {:date date :time time :type :wakes}))
 
-(defn parse-line [str]
-  (let [[time1 time2 & log] (str/split str #"\s")]
-    (parse-event
-     (subs time1 1)
-     (subs time2 0 5)
-     log)))
-
+(defn parse-line
+  "`[1518-11-01 23:58] Guard #99 begins shift` 와 같은 형태의 문자열을 파싱한다.
+   앞에서 부터 date, time, 그리고 그 외 나머지를 묶어서 parse-event에 파라미터로 넘긴다."
+  [str]
+  (let [[time1 time2 & log] (str/split str #"\s")
+        date (subs time1 1)
+        time (subs time2 0 5)]
+    (parse-event date time log)))
 
 (defn parse-to-records [lines]
   (map parse-line lines))
 
-(defn update-last [vec key f]
+(defn update-last 
+  "vector의 마지막 아이템 key 값에 f 함수를 적용해서 변경한 결과를 리턴한다.
+   peek으로 마지막 아이템을 읽어 update하고, 이를 pop으로 마지막 아이템을 제거한 vector에 다시 추가하는 방식으로 구현"
+  [vec key f]
   (if (empty? vec)
     (conj vec (update {key nil} key f))
     (conj (pop vec) (update (peek vec) key f))))
@@ -63,13 +69,30 @@
 (defn log-from-event [event]
   (select-keys event [:date :time :guard]))
 
-(defn start-sleep [start]
+(defn start-sleep
+  "잠자기 시작 기록을 주어진 vector에 추가하는 함수를 리턴
+   이 함수는 입력으로 받은 벡터에 {:start `잠을 잔 시간`}을 추가하는 동작을 한다."
+  [start]
   (fnil #(conj % {:start start}) []))
 
-(defn end-sleep [end]
+(defn end-sleep
+  "잠자기 끝난 기록을 주어진 vector에 추가하는 함수를 리턴
+   이 함수는 입력으로 받은 벡터 마지막 아이템에 {:end `잠을 깬 시간`} entry를 update하는 동작을 한다."
+  [end]
   #(update-last % :end (fnil identity end)))
 
-(defn make-sleep-logs [events]
+(defn make-logs
+  "발생한 event들을 시간 순으로 받아 취합해서 경비원들의 기록을 데이터로 만든다.
+   리턴되는 데이터 형태는 아래와 같다.
+   {:date \"yyyy-MM-dd\",
+    :time \"hh:mm\",
+    :guard 123,
+    :sleeps [
+      {:start \"hh:mm\", :end \"hh:mm\"}
+      {:start \"hh:mm\", :end \"hh:mm\"}
+      ...
+    ]}"
+  [events]
   (reduce
    (fn [logs event]
      (case (:type event)
@@ -83,17 +106,25 @@
        (update-last logs :sleeps (end-sleep (:time event)))))
    [] events))
 
-(defn reduce-by-guards [sleep-logs]
+(defn reduce-by-guards
+  "경비원들의 기록들을 취합해서, 경비 ID를 키로 삼아 잠을 잔 기록들을 매팡한다.
+   리턴되는 데이터 형태는 아래와 같다.
+   {123 (
+     {:start \"hh:mm\", :end \"hh:mm\"}
+     {:start \"hh:mm\", :end \"hh:mm\"}
+     ...
+   )}"
+  [logs]
   (reduce
    (fn [acc log]
      (update acc (:guard log) #(concat % (:sleeps log))))
-   {} sleep-logs))
+   {} logs))
 
 (def sleep-logs (->> sample-file
                      read-file
                      parse-to-records
                      (sort-by #(str/join [(:date %) (:time %)]))
-                     make-sleep-logs
+                     make-logs
                      reduce-by-guards))
 
 sleep-logs
