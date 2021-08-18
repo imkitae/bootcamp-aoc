@@ -1,4 +1,4 @@
-(ns aoc2018_5
+(ns aoc2018_5_2
   (:require [clojure.string :as str]))
 ;; 파트 1
 ;; 입력: dabAcCaCBAcCcaDA
@@ -30,19 +30,22 @@
         (reacted-old (subs tail 1))
         (reacted-old (str/join [head (reacted-old tail)]))))))
 
-(defn reacted [str]
+(defn reacted [str-vec]
   (reduce
    (fn [acc ch]
-     (if (reactable? (last acc) ch)
-       (str/join (drop-last acc))
-       (str/join [acc ch])))
-   "" str))
+     (if (reactable? (peek acc) ch)
+       (pop acc)
+       (conj acc ch)))
+   [] str-vec))
 
 (defn parse-to-react [lines]
-  (map reacted lines))
+  (->> lines
+       first
+       vec
+       reacted))
 
-(defn print-part1-result [reacted-lines]
-  (format "최종으로 남는 문자열 길이는 %d 입니다." (count (first reacted-lines))))
+(defn print-part1-result [reacted-line]
+  (format "최종으로 남는 문자열 길이는 %d 입니다." (count reacted-line)))
 
 (->> sample-file
      read-file
@@ -54,38 +57,32 @@
 ;; 예를 들어 dabAcCaCBAcCcaDA 에서 a/A를 없애고 모두 반응시키면 dbCBcD가 되고 길이는 6인데 비해,
 ;; 같은 문자열에서 c/C를 없애고 모두 반응시키면 daDA가 남고 길이가 4이므로 4가 가장 짧은 길이가 됨.
 
-(def abcd (vec "abcdefghijklmnopqrstuvwxyz")) ;; vec -> seq
-
-(defn reacted-ignore [str ignore]
+(defn reacted-with-ignoring [ignore str-vec]
   (reduce
    (fn [acc ch]
      (if (or (= ignore ch) (= (first (str/upper-case ignore)) ch))
        acc
-       (if (reactable? (last acc) ch)
-         (str/join (drop-last acc))
-         (str/join [acc ch]))))
-   "" str))
+       (if (reactable? (peek acc) ch)
+         (pop acc)
+         (conj acc ch))))
+   [] str-vec))
 
-;; last ~ O(n)
-;; peek ~ O(1) -> 이거는 벡터에 대해서만 동작
-;; pop  ~ O(1) -> 이것도 벡터에 대해서만 동작
+(defn min-reacted [ignores str-vec]
+  (->> ignores
+       (map #(reacted-with-ignoring % str-vec))
+       (map count)
+       (apply min)))
 
-;; (str "a" "b" "c") => "abc"   ; clojure.core/str
+(defn parse-to-min-reacted [lines]
+  (->> lines
+       first
+       vec
+       (min-reacted (seq "abcdefghijklmnopqrstuvwxyz"))))
 
-;; alphabet [a b c d e .. z] => [10 20 99 100 29] => min
-
-
-(defn min-reacted [str ignores]
-  (reduce
-   (fn [min-val ignore]
-     (min (count (reacted-ignore str ignore)) min-val))
-   Integer/MAX_VALUE ignores))
-;; reduce => map + min
-
-(defn print-part2-result [reacted-lines]
-  (format "한 유닛 소거 후 가장 짧은 문자열 길이는 %d 입니다." (min-reacted (first reacted-lines) abcd)))
+(defn print-part2-result [reacted-line-count]
+  (format "한 유닛 소거 후 가장 짧은 문자열 길이는 %d 입니다." reacted-line-count))
 
 (->> sample-file
      read-file
-     parse-to-react
+     parse-to-min-reacted
      print-part2-result)
