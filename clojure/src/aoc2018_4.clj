@@ -58,7 +58,7 @@
 (defn parse-to-records [lines]
   (map parse-line lines))
 
-(defn update-last 
+(defn update-last
   "vector의 마지막 아이템 key 값에 f 함수를 적용해서 변경한 결과를 리턴한다.
    peek으로 마지막 아이템을 읽어 update하고, 이를 pop으로 마지막 아이템을 제거한 vector에 다시 추가하는 방식으로 구현"
   [vec key f]
@@ -108,7 +108,11 @@
 
 (defn reduce-by-guards
   "경비원들의 기록들을 취합해서, 경비 ID를 키로 삼아 잠을 잔 기록들을 매팡한다.
-   리턴되는 데이터 형태는 아래와 같다.
+   
+   # Input
+   [{:guard 123, :sleeps [{:start \"hh:mm\", :end \"hh:mm\"}, ...]}, ...]
+
+   # Output
    {123 (
      {:start \"hh:mm\", :end \"hh:mm\"}
      {:start \"hh:mm\", :end \"hh:mm\"}
@@ -120,12 +124,37 @@
      (update acc (:guard log) #(concat % (:sleeps log))))
    {} logs))
 
+;; reduce -> group-by + map
+
+(defn reduce-by-guards
+  "경비원들의 기록들을 취합해서, 경비 ID를 키로 삼아 잠을 잔 기록들을 매팡한다.
+   
+   # Input
+   [{:guard 123, :sleeps [{:start \"hh:mm\", :end \"hh:mm\"}, ...]}, ...]
+
+   # Output
+   {123 (
+     {:start \"hh:mm\", :end \"hh:mm\"}
+     {:start \"hh:mm\", :end \"hh:mm\"}
+     ...
+   )}"
+  [logs]
+  (->> logs
+       (group-by :guard)
+       (map (fn [[guard log]]
+              [guard (reduce #(concat %1 (:sleeps %2)) [] log)]) ,,,)))
+
+
+;; text -> raw data (record) -> data (aggregated)
+;; 알 필요 있는 것만 노출하자 (parse-to-records, make-logs, reduce-by-guards ?)
+
 (def sleep-logs (->> sample-file
                      read-file
-                     parse-to-records
+                     parse-to-records ; string -> record
                      (sort-by #(str/join [(:date %) (:time %)]))
-                     make-logs
-                     reduce-by-guards))
+                     make-logs ; record -> log
+                     reduce-by-guards ; log -> data
+                     ))
 
 sleep-logs
 
@@ -134,9 +163,10 @@ sleep-logs
 (defn time-to-int [str]
   (Integer/parseInt (subs str 3)))
 
-(defn sleep-time-length [sleep]
-  (- (time-to-int (:end sleep)) (time-to-int (:start sleep))))
+(defn sleep-time-length [{sleep-start :start sleep-end :end}]
+  (- (time-to-int sleep-end) (time-to-int sleep-start)))
 
+;; %이 2개 이상 필요하면 그냥 fn을 쓰는게 낫다.
 (defn reduce-to-time-sum [logs]
   (reduce
    (fn [acc entry]
@@ -145,23 +175,39 @@ sleep-logs
    logs))
 
 (defn max-time-sum-guard [logs]
-  (key (apply max-key val (reduce-to-time-sum logs))))
+  (->> logs
+       reduce-to-time-sum
+       (apply max-key val ,,,)
+       key))
 
 
 
-(defn sleep-time-minutes [sleep]
-  (range (time-to-int (:start sleep)) (time-to-int (:end sleep))))
+(defn sleep-time-minutes [{sleep-start :start sleep-end :end}]
+  (range (time-to-int sleep-start) (time-to-int sleep-end)))
 
+;; {123 [], 124 []}
+;;
+;; (reduce #(concat %1 (sleep-time-minutes %2)) [] (val entry))
+;;
+;; {123 [...], 124 [...] ...} => map => {123 500, 124 400 ...}
+;; 
 (defn reduce-to-time-minutes [logs]
   (reduce
-   (fn [acc entry]
-     (assoc acc (key entry) (reduce #(concat %1 (sleep-time-minutes %2)) [] (val entry))))
+   (fn [acc [k v]]
+     (assoc acc k (reduce #(concat %1 (sleep-time-minutes %2)) [] v)))
    {}
    logs))
+
+;; 가설1. map으로 풀 수 있는 것을 reduce로 풀었기 때문입니다. -> acc라는 상태가 생기기 때문
+;; 가설2. 1개에 대해 동작하는 함수를 n개에 대해 동작하는 함수로 만들었기 때문입니다.
+;; 가설3. group-by?
+;;
+;; loop/recur -> reduce -> map / filter
 
 (defn max-sleep-minutes [logs guard-id]
   (key (apply max-key val (frequencies ((reduce-to-time-minutes logs) guard-id)))))
 
+;; 중간에도 스레딩 메크로를 활용해보자
 
 
 (let [guard-id (max-time-sum-guard sleep-logs)

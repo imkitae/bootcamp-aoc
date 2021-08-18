@@ -92,7 +92,7 @@
 ;; 위의 예시에서는 ID 3 이 ID 1, 2와 겹치지 않음. 3을 출력.
 ;; 겹치지 않는 영역을 가진 ID를 출력하시오. (문제에서 답이 하나만 나옴을 보장함)
 
-(defn intersect?
+(defn intersect-rect?
   "두 rect의 겹침 여부를 리턴
    두 rect가 동일 rect면 체크가 유효하지 않다는 의미에서 (false)로 계산"
   [rect1 rect2]
@@ -113,23 +113,25 @@
       ID 3인 rect는 겹치지 않는다. (false, false, false)"
   [rects]
   (for [rect1 rects]
-    (hash-map
-     :id (:id rect1),
-     :intersection? (for [rect2 rects] (intersect? rect1 rect2)))))
+    {:id (:id rect1)
+     :intersection? (for [rect2 rects] (intersect-rect? rect1 rect2))}))
 
-(defn not-intersect-map? [intersection-map]
-  (every? false? (:intersection? intersection-map)))
+;; (defn not-intersect-map? [intersection-map]
+;;   (every? false? (:intersection? intersection-map)))
 
-(defn intersect-map? [intersection-map]
-  (some? true? (:intersection? intersection-map)))
+(defn intersect-exists? [intersection-map]
+  (some true? (:intersection? intersection-map)))
 
 (defn print-part2-result [intersection-maps]
   (format
    "겹치는 않는 영역을 가진 ID는 %d 입니다."
-   (:id (first (filter not-intersect-map? intersection-maps)))))
+   ;; (:id (first (filter not-intersect-map? intersection-maps)))))
+   (:id (some #(if (intersect-exists? %) nil %) intersection-maps)))) ;; threading macro
+
 
 (->> sample-file
      read-file
      parse-to-rects
      all-intersection-maps
      print-part2-result)
+
