@@ -87,9 +87,8 @@
   (let [mapped-coords (map #(hash-map :manh-dist (manhattan-dist origin %)
                                       :coord %) coords)
         ordered-coords (sort-by :manh-dist mapped-coords)]
-    (if (== (:manh-dist (first ordered-coords))
-            (:manh-dist (second ordered-coords)))
-      nil
+    (when-not (== (:manh-dist (first ordered-coords))
+                  (:manh-dist (second ordered-coords)))
       (:coord (first ordered-coords)))))
 
 (defn boundary-values
@@ -106,28 +105,59 @@
         right (map last horizontals)]
     [top left bottom right]))
 
-(defn finite-area-max-size
-  "coords 각 좌표들을 기준으로 한 최소 맨하튼 거리로 구분하는 영역들 중
-   유한한 영역의 최대 사이즈를 구함"
+(defn nearest-coords-area
+  "1) coords의 좌표들의 xy 최대최소 값으로 사각 영역을 정의
+   2) 그 사각 영역의 모든 좌표들을 coords 좌표들 중 맨하튼 거리가 최소인 coords의 좌표(=nearest-in-coords)로 맵핑
+   3) nearest-in-coords로 맵핑된 영역의 네 변에 위치판 좌표 리스트들을 구함"
   [coords]
   (let [coords-xy-minmax (xy-minmax coords)
-        coords-area (minmax-to-area coords-xy-minmax)
         coords-area-width (inc (- (:x-max coords-xy-minmax) (:x-min coords-xy-minmax)))
-        nearest-coord-area (map #(nearest-in-coords % coords) coords-area)
-        [top left bottom right] (boundary-values nearest-coord-area coords-area-width)
-        infinite-coords (distinct (filter some? (concat top left bottom right)))
-        finite-coords (set/difference (into #{} coords) (into #{} infinite-coords))]
-    (->> nearest-coord-area
-         (filter finite-coords)
-         frequencies
-         (apply max-key second))))
+        coords-area (minmax-to-area coords-xy-minmax)]
+    [(map #(nearest-in-coords % coords) coords-area)
+     coords-area-width]))
+
+(defn infinite-coords
+  "# Input
+   - nearest-coords-area: 주어진 좌표들과 xy 최대최소 영역까지의 맨하튼거리 결과 리스트
+   - width: 영역의 너비
+   # Output
+   - 영역 경계를 구성하는 좌표들의 종류 (= 무한 맨하튼거리 영역을 구성하는 좌표)"
+  [nearest-coord-area width]
+  (->> (boundary-values nearest-coord-area width)
+       (apply concat)
+       (filter some?)
+       distinct))
+
+(defn finite-coords
+  "무한 맨하튼거리 영역 좌표 = 전체 좌표셋 - 유한 맨하튼거리 영역 좌표셋"
+  [coords infinite-coords]
+  (set/difference (into #{} coords) (into #{} infinite-coords)))
+
+(defn finite-area-max-size
+  "# Input
+   - nearest-coord-area: 최소 맨하튼거리 영역 좌표 리스트
+   - finite-coords: 유한 맨하튼거리 영역을 구성하는 좌표 리스트
+   # Ouput
+   유한 맨하튼거리 영역 중 최대 사이즈"
+  [nearest-coord-area finite-coords]
+  (->> nearest-coord-area
+       (filter finite-coords)
+       frequencies
+       (apply max-key second)))
+
+(defn solve1
+  [coords]
+  (let [[nearest-area width] (nearest-coords-area coords)
+        infinite-area (infinite-coords nearest-area width)
+        finite-area (finite-coords nearest-area infinite-area)]
+    (finite-area-max-size nearest-area finite-area)))
 
 (defn print-part1-result [[[x y] area-size]]
   (format "가장 큰 유한한 면적은 [%d %d]에 가까운 좌표들로 이루어져 있으며, 크기는 %d 입니다."
           x y area-size))
 
 (->> (parse-to-all-area sample-file)
-     finite-area-max-size
+     solve1
      print-part1-result)
 
 ;; 파트 2
@@ -136,7 +166,7 @@
 ;;  ..........
 ;;  .A........
 ;;  ..........
-;;  ...###..C.
+;;  ...###..C.  
 ;;  ..#D###...
 ;;  ..###E#...
 ;;  .B.###....
@@ -160,19 +190,25 @@
   (reduce (fn [sum coord]
             (+ sum (manhattan-dist origin coord))) 0 coords))
 
+;; sum 가변인자를 이용하면 reduce 합을 안써도 map & (apply + )
+
 (defn safe-area-size
   "전체 좌표 중 모든 coords 좌표들과의 맨하튼 거리 총 합이 safe-limit 미만인 좌표 개수를 리턴"
-  [safe-limit coords]
+  [safe-limit manh-dist-sum-coords]
+  (->> manh-dist-sum-coords
+       (filter #(< % safe-limit))
+       count))
+
+(defn solve2
+  [coords]
   (let [coords-xy-minmax (xy-minmax coords)
         coords-area (minmax-to-area coords-xy-minmax)
         manh-dist-sum-coord-area (map #(manh-dist-sum-coords % coords) coords-area)]
-    (->> manh-dist-sum-coord-area
-         (filter #(< % safe-limit))
-         count)))
+    (safe-area-size 10000 manh-dist-sum-coord-area)))
 
 (defn print-part2-result [area-size]
   (format "N이 10000 미만인 안전한 지역의 사이즈는 %d 입니다." area-size))
 
 (->> (parse-to-all-area sample-file)
-     (safe-area-size 10000)
+     solve2
      print-part2-result)
