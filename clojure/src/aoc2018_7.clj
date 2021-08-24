@@ -1,5 +1,6 @@
 (ns aoc2018_7
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str])
+  (:require [clojure.set :as set]))
 
 ;; 파트 1
 ;; 스케줄이 주어질 때, 일이 처리되는 순서를 반환하시오. 알파벳 캐릭터 하나로 대표되는 일(work)이 주어지고, 각 일을 처리하기 위해서 선행되어야 하는 일들이 스케줄 형식으로 주어짐.
@@ -45,63 +46,59 @@
             (let [parent-key (keyword parent)
                   child-key (keyword child)]
               (-> m
-                  (update parent-key #(or % nil))
+                  (update parent-key #(or % #{}))
                   (update child-key #(conj (or % #{}) parent-key)))))
           {} pairs))
 
-(defn nil-value-keys [src-map]
+(defn empty-value-keys [src-map]
   (->> src-map
-       (filter #(nil? (second %)))
+       (filter #((complement nil?) (second %)))
+       (filter #(empty? (second %)))
        (map first)))
 
-(defn some-values-keys [to-find src-map]
-  (->> src-map
-       (filter (fn [[_ items]]
-                 (when items
-                   (some #(= % to-find) items))))
-       (map first)))
+(defn init-state [child-parent-map]
+  {:child-parent child-parent-map
+   :result []})
 
-(defn remove-in [src-map item]
-  (reduce-kv (fn [m key item-col]
-               (assoc m
-                      key (filter #(not= item %) item-col)))
-             {} src-map))
+(defn next-to-do [child-parent-map]
+  (->> (empty-value-keys child-parent-map)
+       sort
+       first))
+
+(defn update-child-parent [child-parent-map to-do]
+  (->> child-parent-map
+       (filter (fn [[child _]] (not= child to-do)))
+       (map (fn [[child parents]]
+              [child (filter #(not= % to-do) parents)]))
+       (into {})))
 
 (defn work [{:keys [result
-                    stack
                     child-parent]}]
-  (let [todo (first stack)]
+  (let [todo (next-to-do child-parent)]
     {:result (conj result todo)
-     :stack (as-> stack s
-              (rest s)
-              (into s (->> (some-values-keys todo child-parent)
-                           (filter #(every? (fn [val] (= todo val)) (% child-parent)))))
-              (into (sorted-set) s))
-     :child-parent (remove-in child-parent todo)}))
+     :child-parent (update-child-parent child-parent todo)}))
 
-(defn solve [child-parent-map]
-  (let [starts (nil-value-keys child-parent-map)]
-    (->> {:child-parent child-parent-map
-          :stack (into (sorted-set) starts)
-          :result []}
-         (iterate #(work %))
-         (drop-while #(not-empty (:stack %)))
-         first
-         :result
-         (map name)
-         str/join)))
+(defn solve1 [child-parent-map]
+  (->> (init-state child-parent-map)
+       (iterate #(work %))
+       (drop-while #(not-empty (:child-parent %)))
+       first
+       :result
+       (map name)
+       str/join))
 
 (defn print-part1-result [result]
   (format "일을 처리하는 순서는 %s 입니다." result))
 
 (->> (parse-to-pairs sample-file)
      pair-to-child-parent-map
-     solve
+     solve1
      print-part1-result)
 
 
 ;; 파트 2
-;; 파트 1에서는 일을 워커(worker)가 하나였지만, 파트 2는 5명. 즉, 동시에 5개의 일을 처리할 수 있게 됨. 그리고 각각의 일 (AZ)은 처리하는데 (60+160+26)의 시간이 걸림. B는 62초, D는 64초, etc.
+;; 파트 1에서는 일을 워커(worker)가 하나였지만, 파트 2는 5명. 즉, 동시에 5개의 일을 처리할 수 있게 됨.
+;; 그리고 각각의 일 (A, Z)은 처리하는데 (60+1, 60+26)의 시간이 걸림. B는 62초, D는 64초, etc.
 
 ;; 이 때, 주어진 모든 일을 처리하는데 걸리는 시간을 구하시오.
 
@@ -124,3 +121,96 @@
 ;;   13        E          .       CABFD
 ;;   14        E          .       CABFD
 ;;   15        .          .       CABFDE
+
+(def MAX-WORKER-NUM 5)
+(def A-TIME 61)
+
+(defn work-remains []
+  (->> (range (int \A) (inc (int \Z)))
+       (map #(vector
+              (keyword (str (char %)))
+              (+ A-TIME (- % (int \A)))))
+       (into {})))
+
+(defn init-state2 [child-parent-map]
+  {:time -1
+   :child-parent child-parent-map
+   :remains (work-remains)
+   :working #{}
+   :result []})
+
+(defn update-child-parent2
+  ""
+  [child-parent-map to-dos]
+  (->> child-parent-map
+       (filter (fn [[child _]] (not (child to-dos))))
+       (map (fn [[child parents]]
+              [child (set/difference parents to-dos)]))
+       (into {})))
+
+(defn next-works [child-parent-map]
+  (->> (empty-value-keys child-parent-map)
+       sort))
+
+(defn get-finished-works [remains working]
+  (->>  remains
+        (filter (fn [[work time]] (and (work working) (= 0 time))))
+        (map first)
+        (into #{})))
+
+(defn update-remains [remains working]
+  (->> remains
+       (map (fn [[work time]]
+         [work
+          (if (some #(= work %) working) (max (dec time) 0) time)]))
+       (into {})))
+
+(defn work2 [{:keys [child-parent
+                     remains
+                     working
+                     result
+                     time]}]
+  (let [now-remains (update-remains remains working)
+        finished-works (get-finished-works now-remains working)
+        work-available (next-works (update-child-parent2 child-parent finished-works))
+        workers-available (+ (- MAX-WORKER-NUM (count working)) (count finished-works))
+        to-dos (set (take workers-available (sort (seq (set/difference (set work-available) working)))))]
+    {:child-parent (update-child-parent2 child-parent finished-works)
+     :remains now-remains
+     :working (set/union (set/difference working finished-works) to-dos)
+     :result (concat result finished-works)
+    ;;  :finished finished-works
+    ;;  :work-available work-available
+    ;;  :workers-available workers-available
+    ;;  :to-dos to-dos
+     :time (inc time)}))
+
+;; (->> {:child-parent {:C #{}, :A #{:C}, :F #{:C}, :B #{:A}, :D #{:A}, :E #{:F :D :B}}
+;;       ;; :remains {:L 12, :M 13, :I 9, :R 18, :O 15, :A 1, :F 6, :W 23, :Q 17, :P 16
+;;       ;;           :D 4, :B 2, :J 10, :Z 26, :T 20, :C 3, :E 5, :G 7, :Y 25, :X 24, :H 8
+;;       ;;           :V 22, :U 21, :S 19, :N 14, :K 11}
+;;       :remains {:L 72 :M 73 :I 69 :R 78 :O 75 :A 61 :F 66 :W 83 :Q 77 :P 76
+;;                 :D 64 :B 62 :J 70 :Z 86 :T 80 :C 63 :E 65 :G 67
+;;                 :Y 85 :X 84 :H 68 :V 82 :U 81 :S 79 :N 74 :K 71}
+;;       :working #{}
+;;       :result []
+;;       :time -1}
+;;      (iterate work2)
+;;      (take (+ 258 2))
+;;      last)
+
+
+(defn solve2 [child-parent-map]
+  (->> (init-state2 child-parent-map)
+       (iterate #(work2 %))
+       (drop-while #(not-empty (:child-parent %)))
+       first
+       :time))
+
+(defn print-part2-result [result]
+  (format "일을 전부 처리하는데 %d초가 소요됩니다." result))
+
+(->> (parse-to-pairs sample-file)
+     pair-to-child-parent-map
+     solve2
+     print-part2-result)
