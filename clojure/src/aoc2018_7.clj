@@ -34,14 +34,22 @@
 (defn read-file [path]
   (str/split-lines (slurp path)))
 
-(defn parse-to-pairs [file]
+(defn parse-to-pairs
+  "file에서 읽은 문장들을 의존 관계 리스트 ((A B) (A C) ..) 형식으로 파싱
+   ((A B)의 의미는 B를 수행하는데 A가 선행되어야 한다는 의미)"
+  [file]
   (->> (read-file file)
        (map
         #(re-find #"Step ([A-Z]) must be finished before step ([A-Z]) can begin." %))
        (map rest)
        (map #(map keyword %))))
 
-(defn pair-to-child-parent-map [pairs]
+(defn pair-to-child-parent-map
+  "의존 관계 리스트를 취합하여 해시맵으로 표현
+   키에 해당하는 작업을 하려면 선행되어야 할 작업 리스트를 값으로 설정
+   (예를 들어 {:A #{:C}, :B #{:A}, :C #{}} 의 의미는, 
+   A 이전에 C가 선행되어야 하고, B를 하는데 A가 선행되어야 하며, C는 제일 처음에 실행 가능하다는 의미)"
+  [pairs]
   (reduce (fn [m [parent child]]
             (let [parent-key (keyword parent)
                   child-key (keyword child)]
@@ -50,7 +58,9 @@
                   (update child-key #(conj (or % #{}) parent-key)))))
           {} pairs))
 
-(defn empty-value-keys [src-map]
+(defn empty-value-keys
+  "src-map에서 empty?가 true인 값을 가지는, nil이 아닌 키들만 리스트로 리턴"
+  [src-map]
   (->> src-map
        (filter #((complement nil?) (second %)))
        (filter #(empty? (second %)))
@@ -60,20 +70,27 @@
   {:child-parent child-parent-map
    :result []})
 
-(defn next-to-do [child-parent-map]
+(defn next-to-do
+  "작업 의존 맵을 보고 지금 수행 가능한 작업의 리스트를 리턴
+   지금 수행 가능한 작업 = parent가 empty인 작업"
+  [child-parent-map]
   (->> (empty-value-keys child-parent-map)
        sort
        first))
 
-(defn update-child-parent [child-parent-map to-do]
+(defn update-child-parent
+  "to-do 작업을 수행하고 난 뒤의 의존 맵 상태를 리턴
+   child-parent-map의 키에서 to-do가 있다면 제거하고, 값에서 to-do를 포함한 경우 제거"
+  [child-parent-map to-do]
   (->> child-parent-map
        (filter (fn [[child _]] (not= child to-do)))
        (map (fn [[child parents]]
               [child (filter #(not= % to-do) parents)]))
        (into {})))
 
-(defn work [{:keys [result
-                    child-parent]}]
+(defn work
+  "state를 받아 규칙에 맞게 해야할 다음 일을 진행한 state 리턴"
+  [{:keys [result child-parent]}]
   (let [todo (next-to-do child-parent)]
     {:result (conj result todo)
      :child-parent (update-child-parent child-parent todo)}))
@@ -165,6 +182,8 @@
           (if (some #(= work %) working) (max (dec time) 0) time)]))
        (into {})))
 
+;; 시작된 일 구하기
+;; 끝난 일 구하기
 (defn work2 [{:keys [child-parent
                      remains
                      working
@@ -172,12 +191,13 @@
                      time]}]
   (let [now-remains (update-remains remains working)
         finished-works (get-finished-works now-remains working)
-        work-available (next-works (update-child-parent2 child-parent finished-works))
+        now-child-parent (update-child-parent2 child-parent finished-works)
         workers-available (+ (- MAX-WORKER-NUM (count working)) (count finished-works))
-        to-dos (set (take workers-available (sort (seq (set/difference (set work-available) working)))))]
-    {:child-parent (update-child-parent2 child-parent finished-works)
+        works-available (next-works now-child-parent)
+        works-to-do (set (take workers-available (sort (seq (set/difference (set works-available) working)))))]
+    {:child-parent now-child-parent
      :remains now-remains
-     :working (set/union (set/difference working finished-works) to-dos)
+     :working (set/union (set/difference working finished-works) works-to-do)
      :result (concat result finished-works)
     ;;  :finished finished-works
     ;;  :work-available work-available
