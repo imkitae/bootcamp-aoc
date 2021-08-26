@@ -66,52 +66,112 @@
        (filter #(empty? (second %)))
        (map first)))
 
-(defn init-state [child-parent-map]
-  {:child-parent child-parent-map
-   :result []})
-
-(defn next-to-do
+(defn available-ordered-works
   "작업 의존 맵을 보고 지금 수행 가능한 작업의 리스트를 리턴
    지금 수행 가능한 작업 = parent가 empty인 작업"
-  [child-parent-map]
+  [child-parent-map working]
   (->> (empty-value-keys child-parent-map)
-       sort
-       first))
+       (filter #((complement working) %))
+       sort))
 
-(defn update-child-parent
-  "to-do 작업을 수행하고 난 뒤의 의존 맵 상태를 리턴
-   child-parent-map의 키에서 to-do가 있다면 제거하고, 값에서 to-do를 포함한 경우 제거"
-  [child-parent-map to-do]
-  (->> child-parent-map
-       (filter (fn [[child _]] (not= child to-do)))
-       (map (fn [[child parents]]
-              [child (filter #(not= % to-do) parents)]))
+(def part1-worker-num 1)
+
+(defn part1-work-remains []
+  (->> (range (int \A) (inc (int \Z)))
+       (map #(vector (keyword (str (char %))) 1))
        (into {})))
 
+(defn init-state
+  "초기 state를 생성
+   - remains: 키=일, 값=완료되기까지 남은 시간 으로 만들어진 맵
+   - child-parent 키=일, 값=먼저 완료해야 할 다른 작업들 로 만들어진 맵"
+  [remains child-parent]
+  {:time -1
+   :child-parent child-parent
+   :remains remains
+   :working #{}
+   :result []})
+
+(defn next-child-parent
+  "일의 의존 관계 맵인 child-parent에서 의존 정보를 제거한 결과 리턴
+   1) to-removes에 들어있는 일 중 child-parent에 동일한 키가 있다면 해당 엔트리 제거
+   2) child-parent 값 콜렉션들을 탐색해서 동일한 아이템이 있다면 콜렉션에서 제거"
+  [child-parent to-removes]
+  (->> child-parent
+       (filter (fn [[child _]]
+                 ((complement to-removes) child)))
+       (map (fn [[child parents]]
+              [child (set/difference (set parents) to-removes)]))
+       (into {})))
+
+(defn next-remains
+  "일이 남은 상황인 remains와 현재 작업 중인 일 목록을 바탕으로 다음 시간 대의 remains 정보 리턴
+   1) remains에서 키가 working에 들어있는 일과 동일한 엔트리의 값을 1 감소
+   2) 엔트리 콜렉션을 into를 통해 맵으로 리턴"
+  [remains working]
+  (->> remains
+       (map (fn [[work remain]]
+              [work (if (working work) (dec remain) remain)]))
+       (into {})))
+
+(defn filter-working-remains
+  "전체 일 남은 상황(=remains)과 작업 중인 일 목록(=working)으로 주어진 조건(=pred)에 맞는 일 목록을 구한다.
+   1) 우선 remains에서 working에 존재하는 엔트리를 필터링하고
+   2) 해당 엔트리들에 pred로 다시 필터링한 결과를 리턴"
+  [working pred remains]
+  (->> remains
+       (filter #(working (first %)))
+       (filter pred)))
+
 (defn work
-  "state를 받아 규칙에 맞게 해야할 다음 일을 진행한 state 리턴"
-  [{:keys [result child-parent]}]
-  (let [todo (next-to-do child-parent)]
-    {:result (conj result todo)
-     :child-parent (update-child-parent child-parent todo)}))
+  "주어진 state에서 일을 진행한 1분 뒤 state를 반환
+   1) 전체 일이 남은 상황(remains)과 현재 진행 중인 일(working)로 1분 뒤 일이 남은 상황을 구한다. (remains')
+   2) 1분 뒤 일이 남은 상황을 읽고 1분 뒤 완료될 일들과 남은 일들을 계산한다. (finished, not-finished)
+   3) 1분 뒤 남은 일의 수와 최대 작업자 수의 차이로 1분 뒤 추가로 진행 가능한 일의 수를 구한다. (waiting-num)
+   4) 1분 뒤 완료될 일들을 의존 관계 맵(child-parent)에서 제거해서 1분 뒤의 의존 관계를 계산한다. (child-parent')
+   5) 1분 뒤 의존 관계 맵에서 의존이 없어 1분 뒤 시작 가능한 일들을 구하고 (현재 작업 중인 일도 의존이 없는 상태라 포함되어 있으므로 제외 처리),
+      우선 순위로 정렬한 뒤 추가 진행 가능한 일만큼을 가져온다. (works-to-add)
+   6) 1분 뒤 작업 중인 일은 `끝나지 않은 일` + `추가될 일`
+   7) 1분 뒤 완료될 일들을 전체 완료된 일(result) 목록에 추가한다."
+  [worker-num
+   {:keys [time
+           child-parent
+           remains
+           working
+           result]}]
+  (let [remains' (next-remains remains working)
+        finished (->> remains'
+                      (filter-working-remains working #(= 0 (second %)))
+                      (map first)
+                      set)
+        not-finished (->> remains'
+                          (filter-working-remains working #(< 0 (second %)))
+                          (map first)
+                          set)
+        waiting-num (- worker-num (count not-finished))
+        child-parent' (next-child-parent child-parent finished)
+        works-to-add (->> working
+                          (available-ordered-works child-parent')
+                          (take waiting-num))]
+    {:time (inc time)
+     :child-parent child-parent'
+     :remains remains'
+     :working (set/union not-finished (set works-to-add))
+     :result (concat result finished)}))
 
-(defn solve1 [child-parent-map]
-  (->> (init-state child-parent-map)
-       (iterate #(work %))
+(defn solve [worker-num remains child-parent-map]
+  (->> (init-state remains child-parent-map)
+       (iterate #(work worker-num %))
        (drop-while #(not-empty (:child-parent %)))
-       first
-       :result
-       (map name)
-       str/join))
+       first))
 
-(defn print-part1-result [result]
-  (format "일을 처리하는 순서는 %s 입니다." result))
+(defn print-part1-result [{result :result}]
+  (format "일을 처리하는 순서는 %s 입니다." (str/join (map name result))))
 
 (->> (parse-to-pairs sample-file)
      pair-to-child-parent-map
-     solve1
+     (solve part1-worker-num (part1-work-remains))
      print-part1-result)
-
 
 ;; 파트 2
 ;; 파트 1에서는 일을 워커(worker)가 하나였지만, 파트 2는 5명. 즉, 동시에 5개의 일을 처리할 수 있게 됨.
@@ -139,98 +199,21 @@
 ;;   14        E          .       CABFD
 ;;   15        .          .       CABFDE
 
-(def MAX-WORKER-NUM 5)
-(def A-TIME 61)
+(def part2-worker-num 5)
 
-(defn work-remains []
+(defn part2-work-remains
+  "A ~ Z를 61부터 시작하는 순차적으로 증가하는 수로 치환한 리스트"
+  []
   (->> (range (int \A) (inc (int \Z)))
        (map #(vector
               (keyword (str (char %)))
-              (+ A-TIME (- % (int \A)))))
+              (+ 61 (- % (int \A)))))
        (into {})))
 
-(defn init-state2 [child-parent-map]
-  {:time -1
-   :child-parent child-parent-map
-   :remains (work-remains)
-   :working #{}
-   :result []})
-
-(defn update-child-parent2
-  ""
-  [child-parent-map to-dos]
-  (->> child-parent-map
-       (filter (fn [[child _]] (not (child to-dos))))
-       (map (fn [[child parents]]
-              [child (set/difference parents to-dos)]))
-       (into {})))
-
-(defn next-works [child-parent-map]
-  (->> (empty-value-keys child-parent-map)
-       sort))
-
-(defn get-finished-works [remains working]
-  (->>  remains
-        (filter (fn [[work time]] (and (work working) (= 0 time))))
-        (map first)
-        (into #{})))
-
-(defn update-remains [remains working]
-  (->> remains
-       (map (fn [[work time]]
-         [work
-          (if (some #(= work %) working) (max (dec time) 0) time)]))
-       (into {})))
-
-;; 시작된 일 구하기
-;; 끝난 일 구하기
-(defn work2 [{:keys [child-parent
-                     remains
-                     working
-                     result
-                     time]}]
-  (let [now-remains (update-remains remains working)
-        finished-works (get-finished-works now-remains working)
-        now-child-parent (update-child-parent2 child-parent finished-works)
-        workers-available (+ (- MAX-WORKER-NUM (count working)) (count finished-works))
-        works-available (next-works now-child-parent)
-        works-to-do (set (take workers-available (sort (seq (set/difference (set works-available) working)))))]
-    {:child-parent now-child-parent
-     :remains now-remains
-     :working (set/union (set/difference working finished-works) works-to-do)
-     :result (concat result finished-works)
-    ;;  :finished finished-works
-    ;;  :work-available work-available
-    ;;  :workers-available workers-available
-    ;;  :to-dos to-dos
-     :time (inc time)}))
-
-;; (->> {:child-parent {:C #{}, :A #{:C}, :F #{:C}, :B #{:A}, :D #{:A}, :E #{:F :D :B}}
-;;       ;; :remains {:L 12, :M 13, :I 9, :R 18, :O 15, :A 1, :F 6, :W 23, :Q 17, :P 16
-;;       ;;           :D 4, :B 2, :J 10, :Z 26, :T 20, :C 3, :E 5, :G 7, :Y 25, :X 24, :H 8
-;;       ;;           :V 22, :U 21, :S 19, :N 14, :K 11}
-;;       :remains {:L 72 :M 73 :I 69 :R 78 :O 75 :A 61 :F 66 :W 83 :Q 77 :P 76
-;;                 :D 64 :B 62 :J 70 :Z 86 :T 80 :C 63 :E 65 :G 67
-;;                 :Y 85 :X 84 :H 68 :V 82 :U 81 :S 79 :N 74 :K 71}
-;;       :working #{}
-;;       :result []
-;;       :time -1}
-;;      (iterate work2)
-;;      (take (+ 258 2))
-;;      last)
-
-
-(defn solve2 [child-parent-map]
-  (->> (init-state2 child-parent-map)
-       (iterate #(work2 %))
-       (drop-while #(not-empty (:child-parent %)))
-       first
-       :time))
-
-(defn print-part2-result [result]
-  (format "일을 전부 처리하는데 %d초가 소요됩니다." result))
+(defn print-part2-result [{time :time}]
+  (format "일을 전부 처리하는데 %d초가 소요됩니다." time))
 
 (->> (parse-to-pairs sample-file)
      pair-to-child-parent-map
-     solve2
+     (solve part2-worker-num (part2-work-remains))
      print-part2-result)
