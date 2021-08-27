@@ -1,6 +1,6 @@
 (ns aoc2018_7
-  (:require [clojure.string :as str])
-  (:require [clojure.set :as set]))
+  (:require [clojure.string :as str]
+            [clojure.set :as set]))
 
 ;; 파트 1
 ;; 스케줄이 주어질 때, 일이 처리되는 순서를 반환하시오. 알파벳 캐릭터 하나로 대표되는 일(work)이 주어지고, 각 일을 처리하기 위해서 선행되어야 하는 일들이 스케줄 형식으로 주어짐.

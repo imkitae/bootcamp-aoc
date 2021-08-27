@@ -1,6 +1,6 @@
 (ns aoc2018_3
-  (:require [clojure.string :as str])
-  (:require [clojure.set :as set]))
+  (:require [clojure.string :as str]
+            [clojure.set :as set]))
 
 
 ;; 파트 1

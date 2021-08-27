@@ -1,6 +1,6 @@
 (ns aoc2018_6
-  (:require [clojure.string :as str])
-  (:require [clojure.set :as set]))
+  (:require [clojure.string :as str]
+            [clojure.set :as set]))
 
 ;; 파트 1
 ;; 입력 : 좌표의 쌍이 N개 주어짐

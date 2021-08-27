@@ -1,6 +1,6 @@
 (ns aoc2018-2
-  (:require [clojure.string :as str])
-  (:require [clojure.data :as data]))
+  (:require [clojure.string :as str]
+            [clojure.data :as data]))
 
 ;; #################################
 ;; 파트 1

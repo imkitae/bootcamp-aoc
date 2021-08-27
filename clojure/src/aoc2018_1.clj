@@ -1,6 +1,6 @@
 (ns aoc2018-1
-  (:require [clojure.java.io :as io])
-  (:require [clojure.string :as str]))
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]))
 
 ;; #################################
 ;; 파트 1
